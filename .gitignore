@@ -1,0 +1,22 @@
+# 数据文件
+*.csv
+*.pdf
+*.xlsx
+*.xls
+*.txt
+!README.txt
+
+# 数据库
+*.db
+
+# 日志
+*.log
+server*.out.log
+server*.err.log
+
+# Python缓存
+__pycache__/
+*.pyc
+
+# 临时文件
+tmp_*

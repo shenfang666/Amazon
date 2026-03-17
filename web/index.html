@@ -1,0 +1,236 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Amazon 财务闭环中心</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark">AF</div>
+        <div>
+          <p class="eyebrow">Amazon Finance Closure</p>
+          <h1>Amazon 财务闭环中心</h1>
+          <p class="subcopy">围绕利润、应收、异常与月结状态统一管理 Amazon 财务流程。</p>
+        </div>
+      </div>
+      <div class="toolbar">
+        <label class="control"><span>账期</span><select id="month-select"></select></label>
+        <label class="control"><span>明细口径</span><select id="granular-basis-select"><option value="pnl">利润口径</option><option value="receivable">应收口径</option></select></label>
+        <button id="refresh-button" class="ghost-button" type="button">刷新数据</button>
+      </div>
+    </header>
+
+    <nav class="tabbar reveal">
+      <button class="tab-button active" data-tab="overview" type="button">总览</button>
+      <button class="tab-button" data-tab="profit" type="button">利润分析</button>
+      <button class="tab-button" data-tab="receivables" type="button">应收核对</button>
+      <button class="tab-button" data-tab="exceptions" type="button">异常工作台</button>
+      <button class="tab-button" data-tab="month-close" type="button">月结中心</button>
+      <button class="tab-button" data-tab="uploads" type="button">数据接入</button>
+      <button class="tab-button" data-tab="downloads" type="button">数据下载</button>
+    </nav>
+
+    <main class="dashboard">
+      <section class="tab-panel active" data-tab-panel="overview">
+        <section class="hero-panel reveal">
+          <div class="hero-copy">
+            <p class="eyebrow">闭环总览</p>
+            <h2 id="hero-title">账期概览</h2>
+            <p id="hero-description" class="hero-description"></p>
+            <div id="capabilities" class="hero-tags"></div>
+          </div>
+          <div id="close-status-card" class="close-status-card"></div>
+        </section>
+        <section id="metrics-grid" class="metrics-grid reveal"></section>
+        <section id="comparison-strip" class="comparison-strip reveal"></section>
+        <section class="two-column reveal compact-top">
+          <article class="panel">
+            <div class="panel-head"><div><p class="eyebrow">利润贡献</p><h3>Top SKU</h3></div></div>
+            <div id="top-skus" class="table-stack"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><p class="eyebrow">月结提醒</p><h3>异常与预警</h3></div></div>
+            <div id="alerts" class="table-stack"></div>
+          </article>
+        </section>
+        <section class="panel reveal compact-top">
+          <div class="panel-head"><div><p class="eyebrow">费用校验</p><h3>报表与结算对照</h3></div></div>
+          <div id="fee-validations" class="table-stack"></div>
+        </section>
+      </section>
+
+      <section class="tab-panel" data-tab-panel="profit">
+        <section class="panel reveal compact-top">
+          <div class="panel-head align-end">
+            <div><p class="eyebrow">利润分析</p><h3>SKU 利润拆解</h3></div>
+            <div class="panel-actions">
+              <label class="search-box"><span>SKU 搜索</span><input id="sku-search" type="search" placeholder="例如 NMN-magnesium-90ct"></label>
+              <button id="export-sku-granular-button" class="ghost-button" type="button">导出当前 SKU 明细</button>
+            </div>
+          </div>
+          <div id="sku-summary" class="comparison-strip"></div>
+          <div id="sku-table" class="table-stack"></div>
+        </section>
+        <section class="panel reveal compact-top">
+          <div class="panel-head align-end">
+            <div><p class="eyebrow">订单追踪</p><h3>按订单 / SKU / 结算状态查看</h3></div>
+            <div class="panel-actions">
+              <label class="search-box"><span>订单号 / SKU</span><input id="order-search" type="search"></label>
+              <label class="control"><span>结算状态</span><select id="state-filter"></select></label>
+            </div>
+          </div>
+          <div id="order-state-summary" class="comparison-strip"></div>
+          <div id="order-table" class="table-stack"></div>
+        </section>
+        <section class="panel reveal compact-top">
+          <div class="panel-head align-end">
+            <div><p class="eyebrow">订单定位</p><h3>按订单号追查完整财务明细</h3></div>
+            <div class="panel-actions">
+              <label class="search-box"><span>订单号</span><input id="order-query-input" type="search" placeholder="例如 111-4908959-8585056"></label>
+              <button id="order-query-button" class="ghost-button" type="button">查询</button>
+              <button id="order-query-export-button" class="ghost-button" type="button">导出订单明细</button>
+            </div>
+          </div>
+          <div id="order-query-result" class="table-stack"></div>
+        </section>
+      </section>
+
+      <section class="tab-panel" data-tab-panel="receivables">
+        <section class="panel reveal compact-top">
+          <div class="panel-head"><div><p class="eyebrow">应收闭环</p><h3>应收汇总</h3></div></div>
+          <div id="receivable-summary" class="comparison-strip"></div>
+        </section>
+        <section class="two-column reveal compact-top">
+          <article class="panel"><div class="panel-head"><div><p class="eyebrow">余额</p><h3>应收余额表</h3></div></div><div id="receivable-balance-table" class="table-stack"></div></article>
+          <article class="panel"><div class="panel-head"><div><p class="eyebrow">账龄</p><h3>应收账龄表</h3></div></div><div id="receivable-aging-table" class="table-stack"></div></article>
+        </section>
+        <section class="two-column reveal compact-top">
+          <article class="panel"><div class="panel-head"><div><p class="eyebrow">未回款</p><h3>未结清应收</h3></div></div><div id="receivable-unsettled-table" class="table-stack"></div></article>
+          <article class="panel"><div class="panel-head"><div><p class="eyebrow">未匹配</p><h3>已回款未匹配</h3></div></div><div id="receivable-unmatched-table" class="table-stack"></div></article>
+        </section>
+      </section>
+
+      <section class="tab-panel" data-tab-panel="exceptions">
+        <section class="two-column reveal compact-top">
+          <article class="panel">
+            <div class="panel-head"><div><p class="eyebrow">系统生成</p><h3>待处理异常</h3></div></div>
+            <div id="generated-exception-table" class="table-stack"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><p class="eyebrow">人工记录</p><h3>异常工单</h3></div></div>
+            <div id="manual-exception-table" class="table-stack"></div>
+          </article>
+        </section>
+        <section class="panel reveal compact-top">
+          <div class="panel-head"><div><p class="eyebrow">新增 / 更新工单</p><h3>异常处理表单</h3></div></div>
+          <div class="download-grid">
+            <label class="control"><span>工单 ID（更新时填写）</span><input id="exception-id" type="search" placeholder="留空则新建"></label>
+            <label class="control"><span>异常编码</span><input id="exception-code" type="search" placeholder="例如 receivable_gap"></label>
+            <label class="control"><span>异常类型</span><input id="exception-type" type="search" placeholder="例如 receivable_reconciliation"></label>
+            <label class="control"><span>订单号</span><input id="exception-order-id" type="search"></label>
+            <label class="control"><span>SKU</span><input id="exception-sku" type="search"></label>
+            <label class="control"><span>金额</span><input id="exception-amount" type="number" step="0.01"></label>
+            <label class="control"><span>系统建议</span><input id="exception-suggestion" type="search"></label>
+            <label class="control"><span>人工选择</span><input id="exception-choice" type="search"></label>
+            <label class="control"><span>工单状态</span><select id="exception-status"><option value="open">open</option><option value="resolved">resolved</option><option value="rejected">rejected</option></select></label>
+            <label class="control"><span>审批动作</span><select id="exception-approval-action"><option value="">不记录</option><option value="submit">submit</option><option value="approve">approve</option><option value="reject">reject</option></select></label>
+          </div>
+          <label class="control"><span>处理备注</span><textarea id="exception-note" rows="4" placeholder="补充原因、判断依据、附件说明等"></textarea></label>
+          <div class="panel-actions">
+            <input id="attachment-file" class="file-input" type="file">
+            <button id="upload-attachment-button" class="ghost-button" type="button">上传附件</button>
+            <button id="save-exception-button" class="ghost-button" type="button">保存工单</button>
+          </div>
+          <div id="uploaded-attachments" class="table-stack"></div>
+          <div id="exception-form-status" class="status-panel"></div>
+        </section>
+      </section>
+
+      <section class="tab-panel" data-tab-panel="month-close">
+        <section class="hero-panel reveal">
+          <div class="hero-copy">
+            <p class="eyebrow">月结状态机</p>
+            <h2 id="month-close-title">月结中心</h2>
+            <p id="month-close-description" class="hero-description"></p>
+            <div id="month-close-actions" class="panel-actions"></div>
+          </div>
+          <div id="month-close-current" class="close-status-card"></div>
+        </section>
+        <section class="panel reveal compact-top">
+          <div class="panel-head"><div><p class="eyebrow">前置条件</p><h3>关账检查项</h3></div></div>
+          <div id="month-close-prereq" class="comparison-strip"></div>
+        </section>
+        <section class="panel reveal compact-top">
+          <div class="panel-head align-end"><div><p class="eyebrow">月结动作</p><h3>状态推进</h3></div><div class="panel-actions"><label class="control"><span>备注</span><input id="month-close-note" type="search" placeholder="选填"></label></div></div>
+          <div class="panel-actions">
+            <button class="ghost-button month-close-action" data-action="start_close" type="button">重新跑月结检查</button>
+            <button class="ghost-button month-close-action" data-action="submit_for_approval" type="button">提交审批</button>
+            <button class="ghost-button month-close-action" data-action="approve_close" type="button">批准关账</button>
+            <button class="ghost-button month-close-action" data-action="reopen_close" type="button">重开账期</button>
+          </div>
+          <div id="month-close-action-status" class="status-panel"></div>
+        </section>
+        <section class="two-column reveal compact-top">
+          <article class="panel"><div class="panel-head"><div><p class="eyebrow">状态日志</p><h3>状态变更历史</h3></div></div><div id="month-close-state-history" class="table-stack"></div></article>
+          <article class="panel"><div class="panel-head"><div><p class="eyebrow">动作日志</p><h3>操作历史</h3></div></div><div id="month-close-action-history" class="table-stack"></div></article>
+        </section>
+      </section>
+
+      <section class="tab-panel" data-tab-panel="uploads">
+        <section class="panel reveal compact-top">
+          <div class="panel-head align-end"><div><p class="eyebrow">文件接入</p><h3>上传源文件或附件</h3></div></div>
+          <div class="download-grid">
+            <label class="control"><span>上传目标</span><select id="upload-target"><option value="source">source</option><option value="attachment">attachment</option></select></label>
+            <label class="control"><span>保存文件名</span><input id="upload-filename" type="search" placeholder="留空则使用原文件名"></label>
+            <label class="control"><span>选择文件</span><input id="source-upload-file" class="file-input" type="file"></label>
+            <div class="panel-actions"><button id="upload-source-button" class="ghost-button" type="button">上传文件</button></div>
+          </div>
+          <div id="upload-status" class="status-panel"></div>
+        </section>
+        <section class="panel reveal compact-top">
+          <div class="panel-head align-end"><div><p class="eyebrow">月跑 ETL</p><h3>执行月度处理</h3></div></div>
+          <div class="download-grid">
+            <label class="control"><span>目标账期</span><input id="run-month-input" type="search" placeholder="YYYY-MM"></label>
+            <label class="control"><span>跳过初始化</span><select id="run-skip-init"><option value="true">是，沿用当前库</option><option value="false">否，重新初始化</option></select></label>
+            <div class="panel-actions"><button id="run-monthly-button" class="ghost-button" type="button">启动月跑</button></div>
+          </div>
+          <div id="run-monthly-status" class="status-panel"></div>
+        </section>
+        <section class="two-column reveal compact-top">
+          <article class="panel"><div class="panel-head"><div><p class="eyebrow">源文件</p><h3>最近上传文件</h3></div></div><div id="upload-source-files" class="table-stack"></div></article>
+          <article class="panel"><div class="panel-head"><div><p class="eyebrow">工作清单</p><h3>人工处理工作表</h3></div></div><div id="upload-worklists" class="table-stack"></div></article>
+        </section>
+        <section class="panel reveal compact-top"><div class="panel-head"><div><p class="eyebrow">手工模板</p><h3>手工维护文件</h3></div></div><div id="upload-manual-files" class="table-stack"></div></section>
+      </section>
+
+      <section class="tab-panel" data-tab-panel="downloads">
+        <section class="panel reveal compact-top">
+          <div class="panel-head"><div><p class="eyebrow">数据导出</p><h3>受控下载中心</h3></div><p class="panel-note">当前账期如果仍有异常、应收未平或月结状态未达标，部分下载会被系统阻止。</p></div>
+          <div class="download-grid">
+            <label class="control"><span>汇总维度</span><select id="download-group-by"><option value="sku">按 SKU + 订单类型</option><option value="product_name">按产品名 + 订单类型</option><option value="all">整月总表</option></select></label>
+            <label class="control"><span>订单类型</span><select id="download-order-type"><option value="all">全部订单类型</option><option value="normal_sale">正常销售</option><option value="normal_refund">正常退款</option><option value="vine_sale">Vine 销售</option><option value="vine_refund">Vine 退款</option><option value="test_order_sale">测评订单销售</option><option value="test_order_refund">测评订单退款</option></select></label>
+            <label class="control"><span>SKU / 产品关键词</span><input id="download-keyword" type="search"></label>
+            <label class="control"><span>订单号</span><input id="download-order-id" type="search" placeholder="例如 111-4908959-8585056"></label>
+          </div>
+          <div class="panel-actions">
+            <button id="preview-rollup-button" class="ghost-button" type="button">预览汇总表</button>
+            <button id="download-rollup-button" class="ghost-button" type="button">下载汇总表</button>
+            <button id="preview-order-detail-button" class="ghost-button" type="button">预览订单明细</button>
+            <button id="download-order-detail-button" class="ghost-button" type="button">下载订单明细</button>
+            <button id="preview-allocation-audit-button" class="ghost-button" type="button">预览分摊审计</button>
+            <button id="download-allocation-audit-button" class="ghost-button" type="button">下载分摊审计</button>
+          </div>
+          <div id="download-status" class="status-panel"></div>
+          <div id="download-preview-meta" class="status-panel"></div>
+          <div id="download-preview-table" class="table-stack"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
