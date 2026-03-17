@@ -20,3 +20,7 @@ __pycache__/
 
 # 临时文件
 tmp_*
+.gstack/
+
+# Worktree 隔离目录
+.worktrees/
