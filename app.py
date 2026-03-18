@@ -2647,7 +2647,11 @@ def save_removal_control_rows(rows: list[dict]) -> dict:
 
 
 def main() -> None:
+    import runtime_context
     from server import DashboardHandler
+
+    # Configure runtime context before starting server
+    runtime_context.configure(ROOT, WEB_DIR, DB_PATH, ETL_RUNNER, MANUAL_DIR, ATTACHMENT_DIR)
 
     set_web_dir(WEB_DIR)
     configure_jobs(ROOT, ETL_RUNNER, now_iso)

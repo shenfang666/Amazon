@@ -13,14 +13,15 @@ from urllib.parse import parse_qs, urlparse
 
 import app
 import services
+import runtime_context
 from pages import RUNTIME_APP_JS, render_index_html
 from schemas import json_optional_string, json_required_string, query_value
 
-ROOT = app.ROOT
-WEB_DIR = app.WEB_DIR
-TEXT_TYPES = app.TEXT_TYPES
-DB_PATH = app.DB_PATH
-ATTACHMENT_DIR = app.ATTACHMENT_DIR
+ROOT = runtime_context.ROOT
+WEB_DIR = runtime_context.WEB_DIR
+TEXT_TYPES = runtime_context.TEXT_TYPES
+DB_PATH = runtime_context.DB_PATH
+ATTACHMENT_DIR = runtime_context.ATTACHMENT_DIR
 
 GET_ROUTES = {
     "/api/dashboard": "handle_dashboard",
