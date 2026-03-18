@@ -111,8 +111,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_json(payload)
 
-    def handle_operations(self) -> None:
-        month = query_value(urlparse(self.path).query, "month")
+    def handle_operations(self, query: str) -> None:
+        month = query_value(query, "month")
         try:
             payload = services.get_operations_payload(month)
         except Exception as exc:  # noqa: BLE001
@@ -165,7 +165,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_json(payload)
 
-    def handle_uploads(self) -> None:
+    def handle_uploads(self, query: str) -> None:
         try:
             payload = services.get_uploads_payload()
         except Exception as exc:  # noqa: BLE001
@@ -278,7 +278,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             }
         )
 
-    def handle_run_monthly(self) -> None:
+    def handle_run_monthly(self, query: str) -> None:
         try:
             payload = self.read_json()
             target_month = json_required_string(payload, "target_month")
@@ -294,7 +294,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_json({"ok": True, "job": job})
 
-    def handle_manual_save(self) -> None:
+    def handle_manual_save(self, query: str) -> None:
         try:
             payload = self.read_json()
             file_key = json_required_string(payload, "file_key")
@@ -310,7 +310,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_json({"ok": True, "result": result})
 
-    def handle_exception_save(self) -> None:
+    def handle_exception_save(self, query: str) -> None:
         try:
             payload = self.read_json()
             result = app.save_exception_case(payload)
@@ -322,7 +322,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_json({"ok": True, "result": result})
 
-    def handle_inventory_save(self) -> None:
+    def handle_inventory_save(self, query: str) -> None:
         try:
             payload = self.read_json()
             result = app.save_inventory_movement(payload)
@@ -334,7 +334,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_json({"ok": True, "result": result})
 
-    def handle_month_close_action(self) -> None:
+    def handle_month_close_action(self, query: str) -> None:
         try:
             payload = self.read_json()
             month = json_required_string(payload, "month")
@@ -351,7 +351,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_json({"ok": True, "result": result})
 
-    def handle_removal_controls_save(self) -> None:
+    def handle_removal_controls_save(self, query: str) -> None:
         try:
             payload = self.read_json()
             rows = payload.get("rows", [])
