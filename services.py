@@ -143,34 +143,8 @@ def get_uploads_payload() -> dict:
     conn = sqlite3.connect(app.DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     try:
-        recent_batches = app.query_all(
-            conn,
-            """
-            SELECT
-                batch_type,
-                target_month,
-                source_filename,
-                uploaded_by,
-                uploaded_at,
-                notes
-            FROM upload_batch
-            ORDER BY batch_id DESC
-            LIMIT 20
-            """,
-        )
-        rule_versions = app.query_all(
-            conn,
-            """
-            SELECT
-                rule_scope,
-                version_name,
-                applied_at,
-                notes
-            FROM rule_version
-            ORDER BY rule_version_id DESC
-            LIMIT 10
-            """,
-        )
+        recent_batches = repositories.fetch_recent_batches(conn)
+        rule_versions = repositories.fetch_rule_versions(conn)
     finally:
         conn.close()
 
@@ -563,7 +537,7 @@ def get_month_close_payload(month: str | None = None) -> dict:
         state_history = repositories.fetch_month_close_state_history(conn, selected_month)
         action_history = repositories.fetch_month_close_action_history(conn, selected_month)
         prerequisites = {
-            "mapping_completed": repositories.query_one(conn, "SELECT COUNT(*) AS total FROM pending_mapping_queue WHERE status = 'pending'").get("total", 0) == 0,
+            "mapping_completed": repositories.check_pending_mapping_queue(conn),
             "issues_cleared": int(effective_issues.get("blocker_count") or 0) == 0 and int(effective_issues.get("warning_count") or 0) == 0,
             "receivable_balanced": abs(float(snapshot.get("receivable_gap") or 0)) <= 0.01,
             "inventory_ready": inventory_ready,

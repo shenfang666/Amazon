@@ -555,3 +555,44 @@ def fetch_month_close_action_history(conn: sqlite3.Connection, month: str) -> li
         """,
         (month,),
     )
+
+
+def fetch_recent_batches(conn: sqlite3.Connection, limit: int = 20) -> list[dict]:
+    return query_all(
+        conn,
+        """
+        SELECT
+            batch_type,
+            target_month,
+            source_filename,
+            uploaded_by,
+            uploaded_at,
+            notes
+        FROM upload_batch
+        ORDER BY batch_id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+
+def fetch_rule_versions(conn: sqlite3.Connection, limit: int = 10) -> list[dict]:
+    return query_all(
+        conn,
+        """
+        SELECT
+            rule_scope,
+            version_name,
+            applied_at,
+            notes
+        FROM rule_version
+        ORDER BY rule_version_id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+
+def check_pending_mapping_queue(conn: sqlite3.Connection) -> bool:
+    row = query_one(conn, "SELECT COUNT(*) AS total FROM pending_mapping_queue WHERE status = 'pending'")
+    return row.get("total", 0) == 0
