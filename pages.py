@@ -1,11 +1,21 @@
+﻿"""HTML fragments injected into the base template by the Python page renderer.
+
+This module exposes constants used by `server.py` to assemble the full page.
+Each constant is self-contained HTML that is embedded at render time.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 WEB_DIR: Path | None = None
 
+# Tab button for the "库存核对" tab (renders <button data-tab="inventory">).
 INVENTORY_TAB_HTML = """      <button class="tab-button" data-tab="inventory" type="button">库存核对</button>
 """
+# Full tab panel for the "库存核对" tab.
+# Hero header, 收发存 summary, exception list, manual-entry form,
+# two-column snapshot/movement tables, and adjustment audit log.
 INVENTORY_PANEL_HTML = """
 
       <section class="tab-panel" data-tab-panel="inventory">
@@ -52,12 +62,17 @@ INVENTORY_PANEL_HTML = """
         </section>
       </section>
 """
+# Governance sub-panel appended to the "上传管理" operations tab.
+# Shows recent upload batches and active ETL rule versions.
 UPLOAD_GOVERNANCE_HTML = """
         <section class="two-column reveal compact-top">
           <article class="panel"><div class="panel-head"><div><p class="eyebrow">批次治理</p><h3>最近上传批次</h3></div></div><div id="upload-batches" class="table-stack"></div></article>
           <article class="panel"><div class="panel-head"><div><p class="eyebrow">规则版本</p><h3>当前已启用规则</h3></div></div><div id="upload-rule-versions" class="table-stack"></div></article>
         </section>
 """
+# Extra runtime JS injected after web/app.js.
+# Initializes per-tab state (inventory, profit) and patches response shapes
+# to handle missing/null values before render functions execute.
 RUNTIME_APP_JS = """
 (() => {
   state.inventory = state.inventory || null;
@@ -68,82 +83,6 @@ RUNTIME_APP_JS = """
     transfer: "调拨",
     return: "退回",
     adjust: "调整"
-  };
-
-  const baseRenderOverview = renderOverview;
-  renderOverview = function renderOverviewWithInventory() {
-    baseRenderOverview();
-    const inventory = state.dashboard?.inventory_summary || {};
-    const metricsGrid = $("#metrics-grid");
-    if (!metricsGrid || !Object.keys(inventory).length) return;
-    $("#overview-inventory-metric")?.remove();
-    metricsGrid.insertAdjacentHTML(
-      "beforeend",
-      `<article id="overview-inventory-metric" class="metric-card"><span class="metric-label">库存结存</span><strong class="metric-value">${dec(inventory.closing_qty || 0)}</strong><small class="metric-meta">${inventory.ready ? "库存已就绪" : `负库存 ${intf(inventory.negative_sku_count || 0)}`}</small></article>`
-    );
-  };
-
-  renderProfit = function renderProfitWithLazyData() {
-    const payload = state.profit;
-    if (!payload) {
-      $("#sku-summary").innerHTML = '<div class="empty-state">进入“利润分析”后加载利润明细。</div>';
-      $("#sku-table").innerHTML = '<div class="empty-state">利润明细尚未加载</div>';
-      $("#order-state-summary").innerHTML = '<div class="empty-state">进入“订单追踪”后加载订单状态明细。</div>';
-      $("#order-table").innerHTML = '<div class="empty-state">订单追踪尚未加载</div>';
-      if (!$("#order-query-result")?.innerHTML.trim()) {
-        $("#order-query-result").innerHTML = '<div class="empty-state">输入订单号后可查看该订单的完整财务明细。</div>';
-      }
-      return;
-    }
-
-    const settlementStates = ["all", ...new Set((payload.order_details || []).map((row) => row.settlement_state || "unknown"))];
-    $("#state-filter").innerHTML = settlementStates.map((item) => `<option value="${esc(item)}">${item === "all" ? "全部状态" : esc(settlementState(item))}</option>`).join("");
-
-    const skuKeyword = ($("#sku-search")?.value || "").trim().toLowerCase();
-    const skuRows = (payload.sku_details || []).filter((row) => !skuKeyword || String(row.sku || "").toLowerCase().includes(skuKeyword));
-    $("#sku-summary").innerHTML = [
-      ["SKU 数", intf(skuRows.length)],
-      ["销量", dec(skuRows.reduce((sum, row) => sum + Number(row.qty_sold || 0), 0))],
-      ["净销售", money(skuRows.reduce((sum, row) => sum + Number(row.net_sales || 0), 0))],
-      ["毛利", money(skuRows.reduce((sum, row) => sum + Number(row.gross_profit || 0), 0))]
-    ].map((item) => `<article class="compare-card"><span>${esc(item[0])}</span><strong>${item[1]}</strong></article>`).join("");
-    table("#sku-table", [
-      { label: "SKU", key: "sku" },
-      { label: "销量", render: (r) => dec(r.qty_sold), cls: "number-cell" },
-      { label: "净销售", render: (r) => money(r.net_sales), cls: "number-cell" },
-      { label: "广告费", render: (r) => money(r.ad_spend), cls: "number-cell" },
-      { label: "毛利", render: (r) => money(r.gross_profit), cls: "number-cell" },
-      { label: "毛利率", render: (r) => pct(r.margin_pct), cls: "number-cell" },
-      { label: "ACOS", render: (r) => pct(r.acos_pct), cls: "number-cell" }
-    ], skuRows, "没有匹配到 SKU 数据");
-
-    const orderKeyword = ($("#order-search")?.value || "").trim().toLowerCase();
-    const stateFilter = $("#state-filter")?.value || "all";
-    const orderRows = (payload.order_details || []).filter((row) => {
-      const matchesKeyword = !orderKeyword || String(row.amazon_order_id || "").toLowerCase().includes(orderKeyword) || String(row.sku || "").toLowerCase().includes(orderKeyword);
-      const matchesState = stateFilter === "all" || String(row.settlement_state || "") === stateFilter;
-      return matchesKeyword && matchesState;
-    });
-    const groups = orderRows.reduce((acc, row) => {
-      const key = row.settlement_state || "unknown";
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
-    $("#order-state-summary").innerHTML = Object.entries(groups).map(([key, value]) => `<article class="compare-card"><span>${esc(settlementState(key))}</span><strong>${intf(value)}</strong></article>`).join("") || '<div class="empty-state">当前筛选条件下没有订单</div>';
-    table("#order-table", [
-      { label: "订单号", key: "amazon_order_id" },
-      { label: "日期", render: (r) => esc(String(r.purchase_date || "").slice(0, 10)) },
-      { label: "SKU", key: "sku" },
-      { label: "订单状态", key: "order_status" },
-      { label: "结算状态", render: (r) => `<span class="${chipClass(r.settlement_state)}">${esc(settlementState(r.settlement_state))}</span>` },
-      { label: "订单金额", render: (r) => money(r.item_price), cls: "number-cell" },
-      { label: "促销折扣", render: (r) => money(r.item_promotion_discount), cls: "number-cell" },
-      { label: "结算销售额", render: (r) => money(r.settled_product_sales), cls: "number-cell" },
-      { label: "订单净额", render: (r) => money(r.settled_order_net), cls: "number-cell" }
-    ], orderRows, "没有匹配到订单数据");
-    if (!$("#order-query-result")?.innerHTML.trim()) {
-      $("#order-query-result").innerHTML = '<div class="empty-state">输入订单号后可查看该订单的完整财务明细。</div>';
-    }
   };
 
   function renderInventory() {
@@ -900,25 +839,6 @@ RUNTIME_APP_JS = """
     wrap.style.overflowY = "auto";
     wrap.style.overflowX = "auto";
   }
-
-  const baseRenderUploads = renderUploads;
-  renderUploads = function renderUploadsWithGovernance() {
-    baseRenderUploads();
-    const uploads = state.uploads || {};
-    table("#upload-batches", [
-      { label: "批次类型", key: "batch_type" },
-      { label: "目标账期", key: "target_month" },
-      { label: "源文件", key: "source_filename" },
-      { label: "上传人", key: "uploaded_by" },
-      { label: "上传时间", render: (r) => esc(dt(r.uploaded_at)) }
-    ], uploads.recent_batches || [], "暂无上传批次记录");
-    table("#upload-rule-versions", [
-      { label: "规则域", key: "rule_scope" },
-      { label: "版本", key: "version_name" },
-      { label: "启用时间", render: (r) => esc(dt(r.applied_at)) },
-      { label: "说明", key: "notes" }
-    ], uploads.rule_versions || [], "暂无规则版本记录");
-  };
 
   const baseLoadTabData = loadTabData;
   loadTabData = async function loadTabDataWithInventory(tab, force = false) {

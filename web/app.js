@@ -178,8 +178,17 @@ async function preview(dataset, extra = {}) {
 }
 
 function renderOverview() {
-  const payload = state.dashboard;
-  if (!payload) return;
+  const payload = state.profit;
+  if (!payload) {
+    $("#sku-summary").innerHTML = '<div class="empty-state">进入"利润分析"后加载利润明细。</div>';
+    $("#sku-table").innerHTML = '<div class="empty-state">利润明细尚未加载</div>';
+    $("#order-state-summary").innerHTML = '<div class="empty-state">进入"订单追踪"后加载订单状态明细。</div>';
+    $("#order-table").innerHTML = '<div class="empty-state">订单追踪尚未加载</div>';
+    if (!$("#order-query-result")?.innerHTML.trim()) {
+      $("#order-query-result").innerHTML = '<div class="empty-state">输入订单号后可查看该订单的完整财务明细。</div>';
+    }
+    return;
+  }
   const overview = payload.overview || {};
   $("#hero-title").textContent = `${payload.selected_month} 财务概览`;
   $("#hero-description").textContent = `净销售 ${money(overview.net_sales)}，毛利 ${money(overview.gross_profit)}，毛利率 ${pct(overview.margin_pct)}，期末应收 ${money(overview.closing_receivable)}。`;
