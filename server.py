@@ -180,7 +180,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_json({"error": "order_id is required."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
-            payload = app.build_order_lookup_payload(order_id)
+            payload = services.get_order_lookup_payload(order_id)
         except Exception as exc:  # noqa: BLE001
             self.send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
@@ -196,7 +196,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         order_type_filter = query_value(query, "order_type")
         basis = query_value(query, "basis")
         try:
-            payload = app.build_download_preview(
+            payload = services.get_download_preview(
                 month,
                 dataset,
                 sku_filter=sku_filter,
@@ -224,7 +224,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         order_type_filter = query_value(query, "order_type")
         basis = query_value(query, "basis")
         try:
-            filename, rows = app.export_dataset(
+            filename, rows = services.export_dataset(
                 month,
                 dataset,
                 sku_filter=sku_filter,

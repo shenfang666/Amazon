@@ -590,6 +590,61 @@ def perform_month_close_action(month: str, action_code: str, note: str | None = 
     return app.perform_month_close_action(month, action_code, note)
 
 
+# GET payload builders - service layer entrypoints
+
+def get_order_lookup_payload(order_id: str) -> dict:
+    """Get order lookup payload."""
+    return app.build_order_lookup_payload(order_id)
+
+
+def get_download_preview(
+    month: str | None = None,
+    dataset: str = "order_type_rollup",
+    sku_filter: str | None = None,
+    order_id: str | None = None,
+    group_by: str | None = None,
+    keyword: str | None = None,
+    order_type_filter: str | None = None,
+    basis: str | None = None,
+    limit: int = 50,
+) -> dict:
+    """Get download preview data."""
+    return app.build_download_preview(
+        month=month,
+        dataset=dataset,
+        sku_filter=sku_filter,
+        order_id=order_id,
+        group_by=group_by,
+        keyword=keyword,
+        order_type_filter=order_type_filter,
+        basis=basis,
+        limit=limit,
+    )
+
+
+def export_dataset(
+    month: str | None = None,
+    dataset: str = "order_type_rollup",
+    sku_filter: str | None = None,
+    order_id: str | None = None,
+    group_by: str | None = None,
+    keyword: str | None = None,
+    order_type_filter: str | None = None,
+    basis: str | None = None,
+) -> tuple[str, list[dict]]:
+    """Export dataset to CSV."""
+    return app.export_dataset(
+        month=month,
+        dataset=dataset,
+        sku_filter=sku_filter,
+        order_id=order_id,
+        group_by=group_by,
+        keyword=keyword,
+        order_type_filter=order_type_filter,
+        basis=basis,
+    )
+
+
 def save_removal_control_rows(rows: list[dict]) -> dict:
     """Save removal control rows."""
     return app.save_removal_control_rows(rows)
