@@ -5,6 +5,7 @@ import json
 
 import app
 import repositories
+import file_store
 
 
 def get_dashboard_payload(month: str | None) -> dict:
@@ -138,7 +139,7 @@ def get_profit_payload(month: str | None) -> dict:
 def get_uploads_payload() -> dict:
     app.ensure_manual_templates()
     app.ensure_runtime_schema()
-    source_files = repositories.list_files_by_suffix(app.ROOT, app.SOURCE_FILE_SUFFIXES, limit=30)
+    source_files = file_store.list_files_by_suffix(app.ROOT, app.SOURCE_FILE_SUFFIXES, limit=30)
 
     conn = sqlite3.connect(app.DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
@@ -180,8 +181,8 @@ def get_operations_payload(month: str | None = None) -> dict:
                 }
             )
 
-        worklists = repositories.list_globbed_files(app.MANUAL_DIR, "worklist_*.csv")
-        source_files = repositories.list_files_by_suffix(app.ROOT, app.SOURCE_FILE_SUFFIXES, limit=20)
+        worklists = file_store.list_globbed_files(app.MANUAL_DIR, "worklist_*.csv")
+        source_files = file_store.list_files_by_suffix(app.ROOT, app.SOURCE_FILE_SUFFIXES, limit=20)
         selected_month, pending_removal_controls = app.get_pending_removal_controls(conn, month)
     finally:
         conn.close()
