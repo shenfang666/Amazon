@@ -5,6 +5,358 @@ import json
 
 import app
 import repositories
+
+# ─── Pure payload builders (migrated from app.py) ──────────────────────────────
+
+
+def build_comparison(current: dict, previous: dict | None, previous_month: str | None) -> dict:
+    """Build month-over-month comparison from two overview payloads."""
+    if previous is None:
+        return {
+            "selected_month": current.get("selected_month"),
+            "previous_month": previous_month,
+            "has_comparison": False,
+            "sales_diff": None,
+            "profit_diff": None,
+            "profit_rate_diff": None,
+        }
+    current_sales = float(current.get("net_sales", 0) or 0)
+    previous_sales = float(previous.get("net_sales", 0) or 0)
+    current_profit = float(current.get("gross_profit", 0) or 0)
+    previous_profit = float(previous.get("gross_profit", 0) or 0)
+    current_rate = float(current.get("gross_profit_rate", 0) or 0)
+    previous_rate = float(previous.get("gross_profit_rate", 0) or 0)
+    return {
+        "selected_month": current.get("selected_month"),
+        "previous_month": previous_month,
+        "has_comparison": True,
+        "sales_diff": round(current_sales - previous_sales, 2),
+        "profit_diff": round(current_profit - previous_profit, 2),
+        "profit_rate_diff": round(current_rate - previous_rate, 2),
+        "current_sales": round(current_sales, 2),
+        "previous_sales": round(previous_sales, 2),
+        "current_profit": round(current_profit, 2),
+        "previous_profit": round(previous_profit, 2),
+    }
+
+
+def build_fee_validation_rows(conn: sqlite3.Connection, month: str) -> list[dict]:
+    """Build fee validation rows for a given month."""
+    rows = repositories.query_all(
+        conn,
+        """
+        SELECT
+            COALESCE(order_month, transaction_month) AS period_month,
+            'fee_mismatch' AS issue_code,
+            '费用校验' AS issue_type,
+            'amazon_order' AS source_table,
+            COALESCE(amazon_order_id, settlement_id, '') AS source_ref,
+            COALESCE(order_month, transaction_month) AS issue_key,
+            sku AS issue_value,
+            SUM(ABS(net_sales)) AS metric_value,
+            SUM(ABS(net_sales)) AS amount_value,
+            'sales_reconciliation' AS note,
+            'blocker' AS severity
+        FROM fact_order_lines l
+        LEFT JOIN fact_settlement_lines s ON l.amazon_order_id = s.amazon_order_id AND l.marketplace = s.marketplace
+        WHERE COALESCE(l.order_month, l.transaction_month) = ?
+          AND l.marketplace = 'amazon'
+          AND (
+              ABS(l.net_sales) < 0.01
+              AND ABS(COALESCE(s.settled_product_sales, 0)) > 0.01
+          )
+        GROUP BY COALESCE(l.amazon_order_id, l.settlement_id, ''), l.sku
+        HAVING SUM(ABS(l.net_sales)) > 0.01
+        UNION ALL
+        SELECT
+            COALESCE(order_month, transaction_month) AS period_month,
+            'fee_mismatch' AS issue_code,
+            '费用校验' AS issue_type,
+            'settlement' AS source_table,
+            COALESCE(amazon_order_id, settlement_id, '') AS source_ref,
+            COALESCE(order_month, transaction_month) AS issue_key,
+            sku AS issue_value,
+            SUM(ABS(s.net_sales)) AS metric_value,
+            SUM(ABS(s.net_sales)) AS amount_value,
+            'settlement_reconciliation' AS note,
+            'blocker' AS severity
+        FROM fact_settlement_lines s
+        LEFT JOIN fact_order_lines l ON s.amazon_order_id = l.amazon_order_id AND s.marketplace = l.marketplace
+        WHERE COALESCE(s.order_month, s.transaction_month) = ?
+          AND s.marketplace = 'amazon'
+          AND (
+              ABS(s.net_sales) > 0.01
+              AND l.amazon_order_id IS NULL
+          )
+        GROUP BY COALESCE(s.amazon_order_id, s.settlement_id, ''), s.sku
+        HAVING SUM(ABS(s.net_sales)) > 0.01
+        ORDER BY metric_value DESC
+        LIMIT 100
+        """,
+        (month, month),
+    )
+    for row in rows:
+        row["metric_value"] = domain_helpers.round_money(row.get("metric_value"))
+        row["amount_value"] = domain_helpers.round_money(row.get("amount_value"))
+    return rows
+
+
+def get_receivable_snapshot(conn: sqlite3.Connection, month: str, refresh_if_missing: bool = False) -> dict | None:
+    """Get or refresh receivable snapshot for a given month."""
+    snapshot = repositories.query_one(
+        conn,
+        """
+        SELECT
+            period_month,
+            platform_code,
+            store_code,
+            opening_receivable,
+            current_receivable,
+            current_receipts,
+            closing_receivable,
+            unmatched_receipts,
+            receivable_gap,
+            reconciliation_status,
+            generated_at
+        FROM fact_platform_receivable_snapshot
+        WHERE period_month = ?
+          AND platform_code = 'amazon'
+          AND store_code = ''
+        ORDER BY snapshot_id DESC
+        LIMIT 1
+        """,
+        (month,),
+    )
+    if snapshot:
+        for key in ('opening_receivable', 'current_receivable', 'current_receipts', 'closing_receivable', 'unmatched_receipts', 'receivable_gap'):
+            snapshot[key] = domain_helpers.round_money(snapshot.get(key))
+        return snapshot
+    if refresh_if_missing:
+        app.refresh_receivable_snapshot(conn, month)
+        return get_receivable_snapshot(conn, month, refresh_if_missing=False)
+    return None
+
+
+def build_overview(conn: sqlite3.Connection, month: str) -> dict:
+    """Build overview payload for a given month."""
+    GP = app.GROSS_PROFIT_EXPR  # multi-line SQL expression
+    overview = repositories.query_one(
+        conn,
+        f"""
+        WITH sku AS (
+            SELECT
+                COALESCE(SUM(net_sales), 0) AS net_sales,
+                COALESCE(SUM({GP}), 0) AS gross_profit,
+                COALESCE(SUM(qty_sold), 0) AS units_sold,
+                COALESCE(SUM(ad_spend), 0) AS ad_spend,
+                COUNT(DISTINCT sku) AS sku_count
+            FROM v_monthly_sku_order_type_summary
+            WHERE period_month = ?
+              AND order_type = 'normal_sale'
+        ),
+        settlement AS (
+            SELECT
+                COALESCE(SUM(net_sales), 0) AS net_sales,
+                COALESCE(SUM(product_sales), 0) AS settled_product_sales,
+                COALESCE(SUM(amazon_fees), 0) AS total_fees,
+                COALESCE(SUM(other_income), 0) AS other_income,
+                COALESCE(SUM(COALESCE(settlement_amount, 0) + COALESCE(adjustment_amount, 0)), 0) AS net_settlement,
+                COUNT(DISTINCT amazon_order_id) AS order_count
+            FROM fact_settlement_summary
+            WHERE settlement_month = ?
+              AND marketplace = 'amazon'
+        )
+        SELECT
+            ? AS selected_month,
+            sku.net_sales,
+            sku.gross_profit,
+            CASE WHEN sku.net_sales = 0 THEN 0 ELSE ROUND((sku.gross_profit / sku.net_sales) * 100, 2) END AS gross_profit_rate,
+            sku.units_sold,
+            sku.ad_spend,
+            sku.sku_count,
+            settlement.order_count,
+            settlement.settled_product_sales,
+            settlement.total_fees,
+            settlement.other_income,
+            settlement.net_settlement,
+            CASE WHEN sku.net_sales = 0 THEN 0 ELSE ROUND((sku.ad_spend / sku.net_sales) * 100, 2) END AS acos_rate
+        FROM sku, settlement
+        """,
+        (month, month, month),
+    ) or {}
+    for key in ('net_sales', 'gross_profit', 'gross_profit_rate', 'units_sold', 'ad_spend', 'sku_count', 'order_count', 'settled_product_sales', 'total_fees', 'other_income', 'net_settlement', 'acos_rate'):
+        overview[key] = domain_helpers.round_money(overview.get(key) or 0)
+    return overview
+
+
+def build_inventory_status(conn: sqlite3.Connection, month: str, refresh: bool = False) -> dict:
+    """Build inventory reconciliation status for a given month."""
+    summary_row = repositories.query_one(
+        conn,
+        """
+        SELECT
+            COUNT(*) AS snapshot_count,
+            COALESCE(SUM(opening_qty), 0) AS opening_qty,
+            COALESCE(SUM(inbound_qty), 0) AS inbound_qty,
+            COALESCE(SUM(outbound_qty), 0) AS outbound_qty,
+            COALESCE(SUM(transfer_qty), 0) AS transfer_qty,
+            COALESCE(SUM(return_qty), 0) AS return_qty,
+            COALESCE(SUM(adjust_qty), 0) AS adjust_qty,
+            COALESCE(SUM(closing_qty), 0) AS closing_qty,
+            COALESCE(SUM(CASE WHEN closing_qty < -0.01 THEN 1 ELSE 0 END), 0) AS negative_sku_count
+        FROM fact_inventory_snapshot
+        WHERE period_month = ?
+        """,
+        (month,),
+    ) or {}
+    movement_count_row = repositories.query_one(
+        conn,
+        """
+        SELECT COUNT(*) AS total
+        FROM fact_inventory_movements
+        WHERE period_month = ?
+        """,
+        (month,),
+    )
+    movement_count = int(movement_count_row.get("total", 0) or 0)
+    snapshot_count = int(summary_row.get("snapshot_count", 0) or 0)
+    negative_sku_count = int(summary_row.get("negative_sku_count", 0) or 0)
+    ready = snapshot_count > 0 and negative_sku_count == 0
+    snapshot_rows = repositories.query_all(
+        conn,
+        """
+        SELECT
+            sku,
+            ROUND(opening_qty, 2) AS opening_qty,
+            ROUND(inbound_qty, 2) AS inbound_qty,
+            ROUND(outbound_qty, 2) AS outbound_qty,
+            ROUND(transfer_qty, 2) AS transfer_qty,
+            ROUND(return_qty, 2) AS return_qty,
+            ROUND(adjust_qty, 2) AS adjust_qty,
+            ROUND(closing_qty, 2) AS closing_qty,
+            generated_at
+        FROM fact_inventory_snapshot
+        WHERE period_month = ?
+        ORDER BY ABS(closing_qty) DESC, sku
+        """,
+        (month,),
+    )
+    movement_rows = repositories.query_all(
+        conn,
+        """
+        SELECT
+            movement_id,
+            movement_date,
+            movement_type,
+            sku,
+            ROUND(quantity, 2) AS quantity,
+            ROUND(unit_cost, 2) AS unit_cost,
+            ROUND(amount_total, 2) AS amount_total,
+            source_ref,
+            created_at
+        FROM fact_inventory_movements
+        WHERE period_month = ?
+        ORDER BY COALESCE(movement_date, created_at) DESC, movement_id DESC
+        LIMIT 200
+        """,
+        (month,),
+    )
+    adjustment_rows = repositories.query_all(
+        conn,
+        """
+        SELECT
+            adjustment_id,
+            target_table,
+            target_key,
+            adjustment_type,
+            notes,
+            adjusted_by,
+            adjusted_at
+        FROM manual_adjustment_log
+        WHERE target_key LIKE ?
+        ORDER BY adjustment_id DESC
+        LIMIT 20
+        """,
+        (f"{month}:%",),
+    )
+    issue_rows = []
+    for row in snapshot_rows:
+        closing_qty = float(row.get("closing_qty") or 0)
+        if closing_qty < -0.01:
+            issue_rows.append({
+                "severity": "blocker",
+                "issue_code": "negative_inventory",
+                "issue_key": row.get("sku"),
+                "issue_value": closing_qty,
+                "note": f"库存结存为负数: {closing_qty}",
+            })
+    summary = {
+        "snapshot_count": snapshot_count,
+        "opening_qty": domain_helpers.round_money(summary_row.get("opening_qty") or 0),
+        "inbound_qty": domain_helpers.round_money(summary_row.get("inbound_qty") or 0),
+        "outbound_qty": domain_helpers.round_money(summary_row.get("outbound_qty") or 0),
+        "transfer_qty": domain_helpers.round_money(summary_row.get("transfer_qty") or 0),
+        "return_qty": domain_helpers.round_money(summary_row.get("return_qty") or 0),
+        "adjust_qty": domain_helpers.round_money(summary_row.get("adjust_qty") or 0),
+        "closing_qty": domain_helpers.round_money(summary_row.get("closing_qty") or 0),
+        "negative_sku_count": negative_sku_count,
+        "movement_count": movement_count,
+        "ready": ready,
+    }
+    return {
+        "selected_month": month,
+        "summary": summary,
+        "snapshot_rows": snapshot_rows,
+        "movement_rows": movement_rows,
+        "adjustment_rows": adjustment_rows,
+        "issues": issue_rows,
+        "note": "库存结存数据已就绪" if ready else "请先导入库存快照",
+    }
+
+
+def derive_recommended_close_state(conn: sqlite3.Connection, month: str | None, inventory_ready: bool | None = None) -> str:
+    """Derive recommended close state based on preconditions."""
+    if not month:
+        return "open"
+    if month not in repositories.get_months(conn):
+        return "open"
+    issue_rows = repositories.query_all(
+        conn,
+        """
+        SELECT severity, COUNT(*) AS count
+        FROM monthly_close_issue_detail
+        WHERE period_month = ?
+        GROUP BY severity
+        """,
+        (month,),
+    )
+    issue_map = {row["severity"]: int(row["count"] or 0) for row in issue_rows}
+    blocker_count = issue_map.get("blocker", 0)
+    warning_count = issue_map.get("warning", 0)
+    if blocker_count > 0:
+        return "open"
+    if inventory_ready is False:
+        return "open"
+    if warning_count > 0:
+        return "draft"
+    return "ready"
+
+
+def get_latest_month_close_state(conn: sqlite3.Connection, month: str) -> str | None:
+    """Get the latest close state code for a month."""
+    row = repositories.query_one(
+        conn,
+        """
+        SELECT state_code
+        FROM month_close_state_log
+        WHERE period_month = ?
+        ORDER BY state_log_id DESC
+        LIMIT 1
+        """,
+        (month,),
+    )
+    return row.get("state_code") if row else None
+
 import file_store
 
 
@@ -20,24 +372,24 @@ def get_dashboard_payload(month: str | None) -> dict:
         selected_month = month if month in months else months[0]
         previous_month = months[months.index(selected_month) + 1] if months.index(selected_month) + 1 < len(months) else None
 
-        overview = app.build_overview(conn, selected_month)
-        previous_overview = app.build_overview(conn, previous_month) if previous_month else None
-        comparison = app.build_comparison(overview, previous_overview, previous_month)
+        overview = build_overview(conn, selected_month)
+        previous_overview = build_overview(conn, previous_month) if previous_month else None
+        comparison = build_comparison(overview, previous_overview, previous_month)
 
         close_timeline = repositories.fetch_dashboard_close_timeline(conn)
         for item in close_timeline:
-            item["close_notes"] = app.parse_close_notes(item.get("notes"))
-            item["pdf_amount"] = app.round_money(item.get("pdf_amount"))
-            item["receivable_gap"] = app.round_money(item.get("receivable_gap"))
+            item["close_notes"] = domain_helpers.parse_close_notes(item.get("notes"))
+            item["pdf_amount"] = domain_helpers.round_money(item.get("pdf_amount"))
+            item["receivable_gap"] = domain_helpers.round_money(item.get("receivable_gap"))
 
         top_skus = repositories.fetch_dashboard_top_skus(conn, selected_month, app.GROSS_PROFIT_EXPR)
         alerts = repositories.fetch_dashboard_alerts(conn, selected_month)
-        fee_validations = app.build_fee_validation_rows(conn, selected_month)
-        receivable_summary = app.get_receivable_snapshot(conn, selected_month, refresh_if_missing=True)
-        inventory_summary = app.build_inventory_status(conn, selected_month, refresh=True).get("summary", {})
+        fee_validations = build_fee_validation_rows(conn, selected_month)
+        receivable_summary = get_receivable_snapshot(conn, selected_month, refresh_if_missing=True)
+        inventory_summary = build_inventory_status(conn, selected_month, refresh=True).get("summary", {})
 
         return {
-            "generated_at": app.now_iso(),
+            "generated_at": domain_helpers.now_iso(),
             "selected_month": selected_month,
             "available_months": months,
             "overview": overview,
@@ -83,9 +435,9 @@ def get_receivables_payload(month: str | None = None) -> dict:
         balances = repositories.fetch_receivable_balances(conn)
         for row in balances:
             for key in ('opening_receivable', 'current_receivable', 'current_receipts', 'closing_receivable', 'unmatched_receipts', 'receivable_gap'):
-                row[key] = app.round_money(row.get(key))
+                row[key] = domain_helpers.round_money(row.get(key))
 
-        summary = next((row for row in balances if row['period_month'] == selected_month), None) or app.get_receivable_snapshot(conn, selected_month, refresh_if_missing=True)
+        summary = next((row for row in balances if row['period_month'] == selected_month), None) or get_receivable_snapshot(conn, selected_month, refresh_if_missing=True)
         aging_rows = []
         for index, row in enumerate(balances):
             aging_rows.append(
@@ -126,7 +478,7 @@ def get_profit_payload(month: str | None) -> dict:
         sku_details = repositories.fetch_profit_sku_details(conn, selected_month, app.GROSS_PROFIT_EXPR)
         order_details = repositories.fetch_profit_order_details(conn, selected_month)
         return {
-            "generated_at": app.now_iso(),
+            "generated_at": domain_helpers.now_iso(),
             "selected_month": selected_month,
             "available_months": months,
             "sku_details": sku_details,
@@ -211,7 +563,7 @@ def get_inventory_payload(month: str | None = None) -> dict:
         if not selected_month:
             raise RuntimeError("No months available for inventory reconciliation.")
 
-        payload = app.build_inventory_status(conn, selected_month, refresh=True)
+        payload = build_inventory_status(conn, selected_month, refresh=True)
         return {
             "selected_month": selected_month,
             "available_months": months,
@@ -225,7 +577,7 @@ def _build_exception_override_map(conn: sqlite3.Connection, months: list[str]) -
     override_rows = repositories.fetch_exception_override_rows(conn, months)
     override_map: dict[str, dict] = {}
     for row in override_rows:
-        key = app.build_exception_case_key(
+        key = domain_helpers.build_exception_case_key(
             row.get("period_month"),
             row.get("exception_code"),
             row.get("source_table"),
@@ -284,7 +636,7 @@ def _get_effective_issue_counts(conn: sqlite3.Connection, month: str) -> dict:
             raw_blockers += 1
         elif severity == "warning":
             raw_warnings += 1
-        key = app.build_exception_case_key(
+        key = domain_helpers.build_exception_case_key(
             month,
             row.get("issue_code"),
             row.get("source_table"),
@@ -292,7 +644,7 @@ def _get_effective_issue_counts(conn: sqlite3.Connection, month: str) -> dict:
             row.get("issue_key"),
             row.get("issue_value"),
         )
-        if app.is_normal_override(override_map.get(key)):
+        if domain_helpers.is_normal_override(override_map.get(key)):
             overridden_count += 1
             continue
         if severity == "blocker":
@@ -345,7 +697,7 @@ def get_exceptions_payload(month: str | None = None) -> dict:
         for row in issue_rows:
             if row["issue_code"] == "removal_fee_control_missing":
                 continue
-            case_key = app.build_exception_case_key(
+            case_key = domain_helpers.build_exception_case_key(
                 row["period_month"],
                 row["issue_code"],
                 row["source_table"],
@@ -377,7 +729,7 @@ def get_exceptions_payload(month: str | None = None) -> dict:
                     "override_case_id": override_case.get("exception_case_id") if override_case else None,
                     "override_user_choice": override_case.get("user_choice") if override_case else "",
                     "override_case_status": override_case.get("case_status") if override_case else "",
-                    "override_is_normal": app.is_normal_override(override_case),
+                    "override_is_normal": domain_helpers.is_normal_override(override_case),
                     "override_note": override_case.get("note") if override_case else "",
                 }
             )
@@ -385,7 +737,7 @@ def get_exceptions_payload(month: str | None = None) -> dict:
         for issue_month in manual_months:
             _, pending_removal = app.get_pending_removal_controls(conn, issue_month)
             for row in pending_removal:
-                case_key = app.build_exception_case_key(
+                case_key = domain_helpers.build_exception_case_key(
                     issue_month,
                     "pending_removal_control",
                     "fact_removal_monthly_sku",
@@ -412,12 +764,12 @@ def get_exceptions_payload(month: str | None = None) -> dict:
                         "case_status": "open",
                         "approval_status": "not_required",
                         "note": row["product_name_cn"],
-                        "created_at": app.now_iso(),
+                        "created_at": domain_helpers.now_iso(),
                         "origin": "blocker",
                         "override_case_id": override_case.get("exception_case_id") if override_case else None,
                         "override_user_choice": override_case.get("user_choice") if override_case else "",
                         "override_case_status": override_case.get("case_status") if override_case else "",
-                        "override_is_normal": app.is_normal_override(override_case),
+                        "override_is_normal": domain_helpers.is_normal_override(override_case),
                         "override_note": override_case.get("note") if override_case else "",
                     }
                 )
@@ -523,11 +875,11 @@ def get_month_close_payload(month: str | None = None) -> dict:
         if not selected_month:
             raise RuntimeError("No months available for month close.")
 
-        snapshot = app.get_receivable_snapshot(conn, selected_month, refresh_if_missing=True)
-        inventory_status = app.build_inventory_status(conn, selected_month, refresh=True)
+        snapshot = get_receivable_snapshot(conn, selected_month, refresh_if_missing=True)
+        inventory_status = build_inventory_status(conn, selected_month, refresh=True)
         inventory_ready = bool(inventory_status.get("summary", {}).get("ready"))
-        recommended_state = app.derive_recommended_close_state(conn, selected_month, inventory_ready=inventory_ready)
-        current_state = app.get_latest_month_close_state(conn, selected_month) or recommended_state
+        recommended_state = derive_recommended_close_state(conn, selected_month, inventory_ready=inventory_ready)
+        current_state = get_latest_month_close_state(conn, selected_month) or recommended_state
         effective_issues = _get_effective_issue_counts(conn, selected_month)
         check_log = repositories.fetch_month_close_check_log(conn, selected_month)
         check_log["raw_blocker_count"] = int(check_log.get("blocker_count") or 0)
