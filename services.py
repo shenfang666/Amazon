@@ -648,3 +648,48 @@ def export_dataset(
 def save_removal_control_rows(rows: list[dict]) -> dict:
     """Save removal control rows."""
     return app.save_removal_control_rows(rows)
+
+
+def upload_file(target: str, filename: str, body: bytes) -> dict:
+    """Upload a file and register the batch.
+    
+    Args:
+        target: 'source' or 'attachment'
+        filename: the filename provided by the client
+        body: the file content as bytes
+        
+    Returns:
+        dict with ok, filename, target, size, saved_to, updated_at
+    """
+    app.ensure_manual_templates()
+    clean_filename = app.sanitize_filename(filename)
+    
+    if not body:
+        raise ValueError("Upload body is empty.")
+    
+    if target not in {"source", "attachment"}:
+        raise ValueError("Unsupported upload target.")
+    
+    if target == "source":
+        destination = app.ROOT / clean_filename
+    else:
+        destination = app.ATTACHMENT_DIR / clean_filename
+    
+    destination.write_bytes(body)
+    app.ensure_runtime_schema()
+    
+    conn = sqlite3.connect(app.DB_PATH, timeout=30)
+    try:
+        app.register_upload_batch(conn, target, clean_filename, notes=str(destination))
+        conn.commit()
+    finally:
+        conn.close()
+    
+    return {
+        "ok": True,
+        "filename": clean_filename,
+        "target": target,
+        "size": len(body),
+        "saved_to": str(destination),
+        "updated_at": app.datetime.fromtimestamp(destination.stat().st_mtime).isoformat(timespec="seconds"),
+    }

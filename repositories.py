@@ -4,8 +4,6 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-import file_store
-
 
 def query_all(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
     rows = conn.execute(sql, params).fetchall()
@@ -199,16 +197,6 @@ def fetch_profit_order_details(conn: sqlite3.Connection, month: str) -> list[dic
         """,
         (month,),
     )
-
-
-def list_files_by_suffix(root: Path, allowed_suffixes: set[str], limit: int | None = None) -> list[dict]:
-    """Delegate to file_store.list_files_by_suffix for backward compatibility."""
-    return file_store.list_files_by_suffix(root, allowed_suffixes, limit)
-
-
-def list_globbed_files(root: Path, pattern: str) -> list[dict]:
-    """Delegate to file_store.list_globbed_files for backward compatibility."""
-    return file_store.list_globbed_files(root, pattern)
 
 
 def fetch_inventory_periods(conn: sqlite3.Connection) -> list[str]:

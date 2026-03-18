@@ -11,7 +11,6 @@ from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-import app
 import services
 import runtime_context
 from pages import RUNTIME_APP_JS, render_index_html
@@ -245,39 +244,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def handle_upload(self, query: str) -> None:
         target = query_value(query, "target", "source")
         filename_param = query_value(query, "filename", "")
+        body = self.read_body()
         try:
-            app.ensure_manual_templates()
-            filename = app.sanitize_filename(filename_param)
-            body = self.read_body()
-            if not body:
-                raise ValueError("Upload body is empty.")
-            if target == "source":
-                destination = ROOT / filename
-            elif target == "attachment":
-                destination = ATTACHMENT_DIR / filename
-            else:
-                raise ValueError("Unsupported upload target.")
-            destination.write_bytes(body)
-            app.ensure_runtime_schema()
-            conn = sqlite3.connect(DB_PATH, timeout=30)
-            try:
-                app.register_upload_batch(conn, target, filename, notes=str(destination))
-                conn.commit()
-            finally:
-                conn.close()
+            result = services.upload_file(target, filename_param, body)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
-        self.send_json(
-            {
-                "ok": True,
-                "filename": filename,
-                "target": target,
-                "size": len(body),
-                "saved_to": str(destination),
-                "updated_at": datetime.fromtimestamp(destination.stat().st_mtime).isoformat(timespec="seconds"),
-            }
-        )
+        self.send_json(result)
 
     def handle_run_monthly(self, query: str) -> None:
         try:
