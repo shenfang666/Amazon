@@ -286,7 +286,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             skip_init = bool(payload.get("skip_init", True))
             if len(target_month) != 7 or target_month[4] != "-":
                 raise ValueError("target_month must use YYYY-MM format.")
-            job = app.start_monthly_job(target_month, skip_init)
+            job = services.run_monthly_job(target_month, skip_init)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -302,7 +302,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             rows = payload.get("rows", [])
             if not isinstance(rows, list):
                 raise ValueError("rows must be a list.")
-            result = app.save_manual_file(file_key, rows)
+            result = services.save_manual_file(file_key, rows)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -314,7 +314,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def handle_exception_save(self, query: str) -> None:
         try:
             payload = self.read_json()
-            result = app.save_exception_case(payload)
+            result = services.save_exception_case(payload)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -326,7 +326,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def handle_inventory_save(self, query: str) -> None:
         try:
             payload = self.read_json()
-            result = app.save_inventory_movement(payload)
+            result = services.save_inventory_movement(payload)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -343,7 +343,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             note = json_optional_string(payload, "note")
             if not month:
                 raise ValueError('month is required.')
-            result = app.perform_month_close_action(month, action_code, note)
+            result = services.perform_month_close_action(month, action_code, note)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -358,7 +358,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             rows = payload.get("rows", [])
             if not isinstance(rows, list) or not rows:
                 raise ValueError("rows must be a non-empty list.")
-            result = app.save_removal_control_rows(rows)
+            result = services.save_removal_control_rows(rows)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return

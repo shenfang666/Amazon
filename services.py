@@ -560,3 +560,36 @@ def get_month_close_payload(month: str | None = None) -> dict:
         }
     finally:
         conn.close()
+
+
+# Write operations - service layer entrypoints
+
+def run_monthly_job(target_month: str, skip_init: bool = True) -> dict:
+    """Start the monthly ETL job."""
+    import jobs as jobs_module
+    return jobs_module.start_monthly_job(target_month, skip_init)
+
+
+def save_manual_file(file_key: str, rows: list[dict]) -> dict:
+    """Save manual file data."""
+    return app.save_manual_file(file_key, rows)
+
+
+def save_exception_case(payload: dict) -> dict:
+    """Save exception case."""
+    return app.save_exception_case(payload)
+
+
+def save_inventory_movement(payload: dict) -> dict:
+    """Save inventory movement."""
+    return app.save_inventory_movement(payload)
+
+
+def perform_month_close_action(month: str, action_code: str, note: str | None = None) -> dict:
+    """Perform month close action."""
+    return app.perform_month_close_action(month, action_code, note)
+
+
+def save_removal_control_rows(rows: list[dict]) -> dict:
+    """Save removal control rows."""
+    return app.save_removal_control_rows(rows)
