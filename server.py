@@ -17,7 +17,6 @@ from pages import RUNTIME_APP_JS, render_index_html
 from schemas import json_optional_string, json_required_string, query_value
 
 ROOT = runtime_context.ROOT
-WEB_DIR = runtime_context.WEB_DIR
 TEXT_TYPES = runtime_context.TEXT_TYPES
 DB_PATH = runtime_context.DB_PATH
 ATTACHMENT_DIR = runtime_context.ATTACHMENT_DIR
@@ -53,12 +52,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     }
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(WEB_DIR), **kwargs)
+        super().__init__(*args, directory=str(runtime_context.get_web_dir()), **kwargs)
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path in {"", "/", "/index.html"}:
-            self.send_text(render_index_html(WEB_DIR), "text/html; charset=utf-8")
+            self.send_text(render_index_html(runtime_context.get_web_dir()), "text/html; charset=utf-8")
             return
         if parsed.path == "/runtime-app.js":
             self.send_text(RUNTIME_APP_JS, "application/javascript; charset=utf-8")
@@ -373,3 +372,30 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
+if __name__ == "__main__":
+    import argparse
+    from http.server import ThreadingHTTPServer
+
+    ROOT = Path(__file__).resolve().parent
+    runtime_context.configure(
+        root=ROOT,
+        web_dir=ROOT / "web",
+        db_path=ROOT / "amazon_finance.db",
+        etl_runner=ROOT / "etl" / "99_run_monthly.py",
+        manual_dir=ROOT / "manual",
+        attachment_dir=ROOT / "manual" / "attachments",
+    )
+
+    parser = argparse.ArgumentParser(description="Amazon finance dashboard server")
+    parser.add_argument("--host", default="127.0.0.1", help="bind host")
+    parser.add_argument("--port", type=int, default=8000, help="bind port")
+    args = parser.parse_args()
+
+    server = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
+    print(f"Dashboard running at http://{args.host}:{args.port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
+    finally:
+        server.server_close()

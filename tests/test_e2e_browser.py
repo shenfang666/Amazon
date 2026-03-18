@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 import pytest
+from playwright.async_api import async_playwright
 
 BASE_URL = f"http://127.0.0.1:{os.environ.get('PORT', '8767')}"
 
@@ -35,7 +36,7 @@ def server():
     env["PORT"] = port
 
     proc = subprocess.Popen(
-        [sys.executable, "server.py"],
+        [sys.executable, str(project_root / "server.py"), "--port", port],
         cwd=str(project_root),
         env=env,
         stdout=subprocess.PIPE,
@@ -76,7 +77,7 @@ async def test_homepage_loads(server):
 
         # Strong assertions - fail fast if elements are missing
         assert await page.query_selector(".tabbar"), "Tabbar must be present"
-        assert await page.query_selector("#overview-metrics"), "Dashboard metrics grid must be present"
+        assert await page.query_selector("#metrics-grid"), "Dashboard metrics grid must be present"
         assert await page.query_selector("#month-select"), "Month selector must be present"
         assert len(await page.content()) > 1000, "Page content must be non-trivial"
 
@@ -124,13 +125,14 @@ async def test_tabs_switch_and_render(server):
         await page.wait_for_timeout(2000)
 
         tab_expectations = {
-            "overview": "#overview-metrics",
+            "overview": "#metrics-grid",
             "profit": "#sku-summary",
-            "receivables": "#receivables-summary",
-            "operations": "#manual-files",
-            "inventory": "#inventory-summary",
+            "receivables": "#receivable-summary",
             "exceptions": "#manual-exception-table",
-            "month-close": "#close-state",
+            "month-close": "#month-close-current",
+            "uploads": "#upload-source-files",
+            "downloads": "#download-group-by",
+            "inventory": "#inventory-summary",
         }
 
         for tab_name, expected_selector in tab_expectations.items():
