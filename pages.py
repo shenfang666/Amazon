@@ -1027,8 +1027,16 @@ RUNTIME_APP_JS = """
 """
 
 
-def render_index_html() -> str:
-    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+def render_index_html(web_dir: Path | None = None) -> str:
+    """Render the index.html with injected panels.
+    
+    Args:
+        web_dir: Path to web directory. If None, uses the global WEB_DIR.
+    """
+    effective_web_dir = web_dir if web_dir is not None else WEB_DIR
+    if effective_web_dir is None:
+        raise RuntimeError("WEB_DIR not initialized. Call set_web_dir() or pass web_dir parameter.")
+    html = (effective_web_dir / "index.html").read_text(encoding="utf-8")
     if 'data-tab="inventory"' not in html:
         html = html.replace(
             '      <button class="tab-button" data-tab="receivables" type="button">应收核对</button>\n'

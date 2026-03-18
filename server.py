@@ -59,7 +59,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path in {"", "/", "/index.html"}:
-            self.send_text(render_index_html(), "text/html; charset=utf-8")
+            self.send_text(render_index_html(WEB_DIR), "text/html; charset=utf-8")
             return
         if parsed.path == "/runtime-app.js":
             self.send_text(RUNTIME_APP_JS, "application/javascript; charset=utf-8")
